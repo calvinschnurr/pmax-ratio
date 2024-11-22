@@ -5,7 +5,7 @@
 // Needs shared search budget name
 
 function main() {
-  const TOTAL_BUDGET = 396.56;
+  const TOTAL_BUDGET = 100;
   const LOOKBACK_DAYS = 30;
   const PMAX_MIN_SHARE = 0.10;
   const PMAX_MAX_SHARE = 0.30;
