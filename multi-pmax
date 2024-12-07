@@ -1,0 +1,181 @@
+function main() {
+  const TOTAL_BUDGET = 100;
+  const LOOKBACK_DAYS = 30;
+  const PMAX_MIN_SHARE = 0.05;
+  const PMAX_MAX_SHARE = 0.70;
+  const SEARCH_SHARED_BUDGETS = ['Shared Budget'];
+
+  // Fetch stats by campaign type
+  let searchPerformance = getPerformanceData('SEARCH', LOOKBACK_DAYS);
+  let pmaxPerformance = getPerformanceData('PERFORMANCE_MAX', LOOKBACK_DAYS);
+
+  // Sum stats for account totals
+  let totalConvValue = searchPerformance.convValue + pmaxPerformance.convValue;
+  let totalCost = searchPerformance.cost + pmaxPerformance.cost;
+
+  // Calculate ROAS
+  let totalROAS = calculateROAS({ convValue: totalConvValue, cost: totalCost });
+  let searchROAS = calculateROAS(searchPerformance);
+
+  // Log performance metrics with ROAS for debugging
+  Logger.log('Search Performance (Shared Budget): Cost: $' + searchPerformance.cost.toFixed(2) + ', Conv. Value: $' + searchPerformance.convValue.toFixed(2) + ', ROAS: ' + searchROAS.toFixed(2));
+  Logger.log('PMax Performance:');
+  for (let campaign in pmaxPerformance.campaignPerformance) {
+    let campPerf = pmaxPerformance.campaignPerformance[campaign];
+    let campROAS = calculateROAS(campPerf);
+    Logger.log('  - ' + campaign + ': Cost: $' + campPerf.cost.toFixed(2) + ', Conv. Value: $' + campPerf.convValue.toFixed(2) + ', ROAS: ' + campROAS.toFixed(2));
+  }
+  Logger.log('Total Performance Metrics: Cost: $' + totalCost.toFixed(2) + ', Conv. Value: $' + totalConvValue.toFixed(2) + ', ROAS: ' + totalROAS.toFixed(2));
+
+  // Calculate budget shares based on relative performance
+  let searchBudgetShare = (searchROAS / totalROAS) * (searchPerformance.cost / totalCost);
+  let pmaxBudgetShares = {};
+  for (let campaign in pmaxPerformance.campaignPerformance) {
+    let campPerf = pmaxPerformance.campaignPerformance[campaign];
+    let campROAS = calculateROAS(campPerf);
+    pmaxBudgetShares[campaign] = (campROAS / totalROAS) * (campPerf.cost / totalCost);
+  }
+
+  // Normalize shares to ensure they sum to 1
+  let totalShare = searchBudgetShare + Object.values(pmaxBudgetShares).reduce((a, b) => a + b, 0);
+
+  if (totalShare <= 0) {
+    Logger.log('Warning: Total share is zero or negative, exiting script. No budget allocation will be made.');
+    return; // Exit the script without making any changes
+  } else {
+    searchBudgetShare /= totalShare;
+    for (let campaign in pmaxBudgetShares) {
+      pmaxBudgetShares[campaign] /= totalShare;
+    }
+    Logger.log('Normalized Shares by Distinct Budget:');
+    Logger.log('  - Shared Budget (Search): ' + (searchBudgetShare * 100).toFixed(2) + '%');
+    for (let campaign in pmaxBudgetShares) {
+      Logger.log('  - ' + campaign + ': ' + (pmaxBudgetShares[campaign] * 100).toFixed(2) + '%');
+    }
+  }
+
+  // Apply constraints to PMax budget shares
+  let totalPmaxShare = Object.values(pmaxBudgetShares).reduce((a, b) => a + b, 0);
+  if (totalPmaxShare < PMAX_MIN_SHARE) {
+    let scaleFactor = PMAX_MIN_SHARE / totalPmaxShare;
+    for (let campaign in pmaxBudgetShares) {
+      pmaxBudgetShares[campaign] *= scaleFactor;
+    }
+  } else if (totalPmaxShare > PMAX_MAX_SHARE) {
+    let scaleFactor = PMAX_MAX_SHARE / totalPmaxShare;
+    for (let campaign in pmaxBudgetShares) {
+      pmaxBudgetShares[campaign] *= scaleFactor;
+    }
+  }
+
+  // Ensure non-negative search budget share
+  searchBudgetShare = Math.max(0, 1 - Object.values(pmaxBudgetShares).reduce((a, b) => a + b, 0));
+
+  let searchBudget = TOTAL_BUDGET * searchBudgetShare;
+  let pmaxBudgets = {};
+  for (let campaign in pmaxBudgetShares) {
+    pmaxBudgets[campaign] = TOTAL_BUDGET * pmaxBudgetShares[campaign];
+  }
+
+  updateSearchSharedBudgets(SEARCH_SHARED_BUDGETS, searchBudget);
+  updatePMaxCampaignBudgets(pmaxBudgets);
+
+  // Detailed logging of final budget allocation
+  Logger.log('\nFinal Budget Allocation:');
+  Logger.log('Total Daily Budget: $' + TOTAL_BUDGET.toFixed(2));
+  Logger.log('Search (Shared): $' + searchBudget.toFixed(2) + ' (' + (searchBudgetShare * 100).toFixed(2) + '%)');
+  for (let campaign in pmaxBudgets) {
+    Logger.log('PMax - ' + campaign + ': $' + pmaxBudgets[campaign].toFixed(2) + ' (' + (pmaxBudgetShares[campaign] * 100).toFixed(2) + '%)');
+  }
+}
+
+function calculateROAS(performance) {
+  return performance.cost > 0 ? performance.convValue / performance.cost : 0;
+}
+
+function getPerformanceData(campaignType, days) {
+  let query = AdsApp.report(
+    "SELECT CampaignName, Cost, ConversionValue " +
+    "FROM CAMPAIGN_PERFORMANCE_REPORT " +
+    "WHERE AdvertisingChannelType = '" + campaignType + "' " +
+    "DURING LAST_" + days + "_DAYS"
+  );
+
+  let rows = query.rows();
+  let totalCost = 0;
+  let totalConvValue = 0;
+  let campaignPerformance = {};
+
+  while (rows.hasNext()) {
+    let row = rows.next();
+    let campaignName = row['CampaignName'];
+    let costValue = parseFloat(row['Cost'].replace(/,/g, '')) || 0;
+    let convValue = parseFloat(row['ConversionValue'].replace(/,/g, '')) || 0;
+
+    totalCost += costValue;
+    totalConvValue += convValue;
+
+    if (campaignType === 'PERFORMANCE_MAX') {
+      campaignPerformance[campaignName] = {
+        cost: costValue,
+        convValue: convValue
+      };
+    }
+  }
+
+  return {
+    cost: totalCost,
+    convValue: totalConvValue,
+    campaignPerformance: campaignPerformance
+  };
+}
+
+function updateSearchSharedBudgets(sharedBudgetNames, totalSearchBudget) {
+  let budgetPerSharedBudget = sharedBudgetNames.length > 0 ? totalSearchBudget / sharedBudgetNames.length : 0;
+
+  sharedBudgetNames.forEach(function(budgetName) {
+    let sharedBudgets = AdsApp.budgets()
+      .withCondition("BudgetName = '" + budgetName + "'")
+      .get();
+
+    if (sharedBudgets.hasNext()) {
+      let sharedBudget = sharedBudgets.next();
+      try {
+        sharedBudget.setAmount(budgetPerSharedBudget);
+        Logger.log('Successfully updated shared budget: ' + budgetName);
+      } catch (e) {
+        Logger.log('Error setting shared budget ' + budgetName + ': ' + e.message);
+      }
+    } else {
+      Logger.log('Shared budget not found: ' + budgetName);
+    }
+  });
+}
+
+function updatePMaxCampaignBudgets(pmaxBudgets) {
+  let pmaxCampaigns = AdsApp.performanceMaxCampaigns()
+    .withCondition("campaign.status = ENABLED")
+    .get();
+
+  while (pmaxCampaigns.hasNext()) {
+    let campaign = pmaxCampaigns.next();
+    let campaignName = campaign.getName();
+    
+    if (pmaxBudgets.hasOwnProperty(campaignName)) {
+      let campaignBudget = pmaxBudgets[campaignName];
+      let budget = campaign.getBudget();
+      if (budget) {
+        try {
+          budget.setAmount(campaignBudget);
+          Logger.log('Updated budget for PMax campaign: ' + campaignName + ' to $' + campaignBudget.toFixed(2));
+        } catch (e) {
+          Logger.log('Error setting budget for PMax campaign ' + campaignName + ': ' + e.message);
+        }
+      } else {
+        Logger.log('Unable to get budget for PMax campaign: ' + campaignName);
+      }
+    } else {
+      Logger.log('No budget allocation found for PMax campaign: ' + campaignName);
+    }
+  }
+}
