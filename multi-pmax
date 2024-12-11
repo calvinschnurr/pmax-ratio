@@ -56,20 +56,36 @@ function main() {
 
   // Apply constraints to PMax budget shares
   let totalPmaxShare = Object.values(pmaxBudgetShares).reduce((a, b) => a + b, 0);
+  
   if (totalPmaxShare < PMAX_MIN_SHARE) {
+    // Scale up PMax shares to meet minimum
     let scaleFactor = PMAX_MIN_SHARE / totalPmaxShare;
     for (let campaign in pmaxBudgetShares) {
       pmaxBudgetShares[campaign] *= scaleFactor;
     }
+    // Adjust search share accordingly
+    searchBudgetShare = 1 - PMAX_MIN_SHARE;
   } else if (totalPmaxShare > PMAX_MAX_SHARE) {
+    // Scale down PMax shares to meet maximum
     let scaleFactor = PMAX_MAX_SHARE / totalPmaxShare;
     for (let campaign in pmaxBudgetShares) {
       pmaxBudgetShares[campaign] *= scaleFactor;
     }
+    // Set search share to remaining budget
+    searchBudgetShare = 1 - PMAX_MAX_SHARE;
   }
 
-  // Ensure non-negative search budget share
-  searchBudgetShare = Math.max(0, 1 - Object.values(pmaxBudgetShares).reduce((a, b) => a + b, 0));
+  // Verify final shares sum to 1
+  let finalTotalShare = searchBudgetShare + Object.values(pmaxBudgetShares).reduce((a, b) => a + b, 0);
+  if (Math.abs(finalTotalShare - 1) > 0.0001) {  // Allow for small floating point differences
+    Logger.log('Warning: Final shares do not sum to 1. Adjusting...');
+    searchBudgetShare = 1 - Object.values(pmaxBudgetShares).reduce((a, b) => a + b, 0);
+  }
+
+  Logger.log('\nBudget Share Adjustments:');
+  Logger.log('Initial PMax Share: ' + (totalPmaxShare * 100).toFixed(2) + '%');
+  Logger.log('Final PMax Share: ' + (Object.values(pmaxBudgetShares).reduce((a, b) => a + b, 0) * 100).toFixed(2) + '%');
+  Logger.log('Final Search Share: ' + (searchBudgetShare * 100).toFixed(2) + '%');
 
   let searchBudget = TOTAL_BUDGET * searchBudgetShare;
   let pmaxBudgets = {};
