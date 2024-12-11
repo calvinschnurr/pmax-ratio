@@ -47,15 +47,18 @@ function main() {
 
   // Apply constraints to PMax budget share
   pmaxBudgetShare = Math.max(PMAX_MIN_SHARE, Math.min(PMAX_MAX_SHARE, pmaxBudgetShare));
-
-  // Ensure non-negative search budget share
-  searchBudgetShare = Math.max(0, Math.min(1 - pmaxBudgetShare, searchBudgetShare));
-
+  
+  // Set search budget share to complement of PMax share
+  searchBudgetShare = 1 - pmaxBudgetShare;
+  
+  // Verify total allocation equals total budget
   let searchBudget = TOTAL_BUDGET * searchBudgetShare;
   let pmaxBudget = TOTAL_BUDGET * pmaxBudgetShare;
-
-  updateSearchSharedBudgets(SEARCH_SHARED_BUDGETS, searchBudget);
-  updatePMaxCampaignBudgets(pmaxBudget);
+  
+  // Add verification logging
+  Logger.log('Budget Verification:');
+  Logger.log('Total of shares: ' + (searchBudgetShare + pmaxBudgetShare));
+  Logger.log('Total of budgets: $' + (searchBudget + pmaxBudget).toFixed(2));
 
   // Detailed logging of final budget allocation
   Logger.log('\nFinal Budget Allocation:');
