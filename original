@@ -7,8 +7,8 @@
 function main() {
   const TOTAL_BUDGET = 100;
   const LOOKBACK_DAYS = 30;
-  const PMAX_MIN_SHARE = 0.10;
-  const PMAX_MAX_SHARE = 0.30;
+  const PMAX_MIN_SHARE = 0.05;
+  const PMAX_MAX_SHARE = 0.70;
   const SEARCH_SHARED_BUDGETS = ['Shared Budget'];
 
   // Fetch stats by campaign type
